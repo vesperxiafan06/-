@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>单词卡片 · 翻转记忆</title>
+<style>
+:root{
+  --primary:#0F2841; --primary-hover:#0F2841CC;
+  --brand:#01A0AC; --brand-hover:#00B3BE;
+  --text-primary:#0F2841; --text-secondary:#595E72; --text-muted:#868A9A; --text-disabled:#BBBDC7;
+  --surface-base:#FFFFFF; --surface-muted:#F7F7F7; --surface-subtle:#F1F1F1; --surface-soft:#F8F8F8;
+  --surface-input:#F7F7F780; --surface-disabled:#E6E7EC;
+  --border-default:#0F284126; --border-focus:#0F2841;
+  --overlay:#00000080;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"PingFang SC",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","Microsoft YaHei",sans-serif;min-height:100vh;color:var(--text-primary);background:var(--surface-muted);display:flex;flex-direction:column;align-items:center;padding:0;}
+.app{width:100%;max-width:460px;min-height:100dvh;display:flex;flex-direction:column;background:var(--surface-muted);padding:16px 14px 24px;gap:16px;}
+.header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;}
+.title h1{font-size:20px;font-weight:500;letter-spacing:.2px;color:var(--text-primary);}
+.title p{font-size:12px;color:var(--text-muted);margin-top:4px;line-height:1.5;}
+
+/* 主按钮：深色胶囊 #0F2841，字重 400 */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:none;cursor:pointer;font:inherit;font-size:14px;font-weight:400;color:#FFFFFF;padding:6px 16px;border-radius:999px;background:var(--primary);white-space:nowrap;transition:background .15s ease;}
+.btn:hover{background:var(--primary-hover);}
+.btn.ghost{background:var(--surface-base);color:var(--text-primary);border:0.5px solid var(--border-default);}
+.btn.ghost:hover{background:var(--surface-subtle);}
+.btn.icon-only{padding:6px;}
+
+/* 9:16 出血框（虚线），用于划定截屏范围 */
+.frame{width:100%;aspect-ratio:9/16;border:2px dashed #E14D57;border-radius:24px;padding:16px;display:flex;flex-direction:column;position:relative;background:var(--surface-muted);}
+.frame::after{content:"9:16";position:absolute;top:10px;right:14px;font-size:11px;letter-spacing:1px;color:#E14D57;opacity:.7;}
+.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;gap:12px;align-content:center;}
+.cell{perspective:1000px;display:flex;min-height:0;}
+.tilt{width:100%;height:100%;transform-style:preserve-3d;transition:transform .18s ease-out;will-change:transform;display:flex;}
+.card{position:relative;width:100%;aspect-ratio:4/3;cursor:pointer;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.4,.1,.2,1);border-radius:20px;border:0.5px solid var(--border-default);}
+/* 聚焦强调：鼠标悬停 或 自动播放当前卡片 */
+.card:hover,
+.card.focused{
+  border-color:#000000;
+  box-shadow:0 0 0 2px #000000, 0 6px 20px rgba(0,0,0,.12);
+  transition:transform .6s cubic-bezier(.4,.1,.2,1), border-color .15s ease, box-shadow .15s ease;
+}
+.card.flipped{transform:rotateY(180deg);}
+.face{position:absolute;inset:0;border-radius:20px;overflow:hidden;backface-visibility:hidden;-webkit-backface-visibility:hidden;}
+.face.front{background:var(--surface-base);}
+.face.back{background:var(--surface-base);transform:rotateY(180deg);}
+.face img{width:100%;height:100%;object-fit:cover;display:block;}
+.placeholder{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:var(--surface-base);color:var(--text-muted);text-align:center;padding:14px;}
+.placeholder .letter{font-size:40px;font-weight:500;opacity:.16;line-height:1;color:var(--text-primary);}
+.placeholder .hint{font-size:12px;color:var(--text-muted);max-width:150px;line-height:1.5;}
+/* 倒数遮罩 */
+.countdown{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(15,40,65,.55);backdrop-filter:blur(2px);border-radius:20px;overflow:hidden;opacity:0;pointer-events:none;transition:opacity .2s ease;}
+.countdown.show{opacity:1;}
+.countdown-num{font-size:64px;font-weight:500;color:#FFFFFF;animation:pop .5s ease;}
+@keyframes pop{0%{transform:scale(.4);opacity:0;}40%{transform:scale(1.15);opacity:1;}100%{transform:scale(1);opacity:1;}}
+.back-inner{width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;padding:18px;text-align:center;overflow:hidden;}
+.back-word{font-size:24px;font-weight:500;line-height:1.2;word-break:break-word;color:var(--text-primary);}
+.back-phonetic{margin-top:8px;font-size:14px;color:var(--brand);}
+.back-example{margin-top:14px;font-size:12px;line-height:1.6;color:var(--text-secondary);word-break:break-word;}
+
+.overlay{position:fixed;inset:0;z-index:50;background:var(--overlay);display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;pointer-events:none;transition:opacity .25s ease;}
+.overlay.open{opacity:1;pointer-events:auto;}
+.modal{width:100%;max-width:520px;max-height:90dvh;overflow:auto;background:var(--surface-base);border-radius:20px;padding:20px 18px 24px;transform:translateY(16px) scale(.98);transition:transform .25s ease;box-shadow:0 12px 40px rgba(0,0,0,.18);}
+.overlay.open .modal{transform:none;}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;gap:12px;}
+.modal-head h2{font-size:20px;font-weight:500;color:var(--text-primary);}
+.modal-head p{font-size:13px;color:var(--text-muted);margin-top:4px;}
+.x{background:none;border:none;color:var(--text-secondary);width:32px;height:32px;border-radius:20px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .15s ease;flex:none;}
+.x:hover{background:var(--surface-subtle);}
+.slots{display:grid;grid-template-columns:1fr;gap:14px;margin-top:16px;}
+.slot{background:var(--surface-base);border:0.5px solid var(--border-default);border-radius:16px;padding:16px;}
+.slot-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-weight:500;font-size:14px;color:var(--text-primary);}
+.slot-head .remove{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:12.5px;}
+.slot-head .remove:hover{color:var(--text-primary);}
+.slot-body{display:flex;gap:14px;}
+.upload{position:relative;width:112px;height:146px;flex:none;border-radius:12px;background:var(--surface-subtle);border:0.5px dashed var(--text-muted);display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;transition:border-color .15s ease,background .15s ease;}
+.upload:hover{border-color:var(--primary);background:var(--surface-soft);}
+.upload .preview{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.upload.has-img{border-style:solid;border-color:var(--border-default);}
+.upload-hint{color:var(--text-muted);font-size:12.5px;text-align:center;padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.upload.has-img .upload-hint{display:none;}
+.fields{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0;}
+.fields label{font-size:12.5px;color:var(--text-secondary);display:flex;flex-direction:column;gap:4px;}
+.fields input,.fields textarea{font:inherit;font-size:14px;color:var(--text-primary);background:var(--surface-input);border:0.5px solid var(--border-default);border-radius:16px;padding:10px 12px;resize:vertical;width:100%;}
+.fields textarea{min-height:64px;}
+.fields input:focus,.fields textarea:focus{outline:none;border-color:var(--border-focus);background:var(--surface-base);}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:24px;flex-wrap:wrap;}
+
+/* HDS 图标：CSS mask + currentColor */
+.hds-icon{display:inline-block;width:1em;height:1em;flex:0 0 auto;background-color:currentColor;-webkit-mask:var(--hds-icon-src) center / contain no-repeat;mask:var(--hds-icon-src) center / contain no-repeat;}
+.btn.icon-only .hds-icon{width:18px;height:18px;}
+
+/* 头部按钮组与录屏状态 */
+.header-actions{display:flex;align-items:center;gap:8px;}
+.rec-dot{width:8px;height:8px;border-radius:50%;background:var(--text-disabled);flex:none;}
+#recBtn.recording .rec-dot{background:#E14D57;animation:blink 1s ease infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.3;}}
+
+/* 录屏模式：隐藏标题栏，隐藏出血线，呈现纯净 9:16 区域 */
+body.rec-mode .header{display:none;}
+body.rec-mode .app{gap:0;padding:0;}
+body.rec-mode .frame{border:2px solid transparent;border-radius:0;padding:12px;background:#FFFFFF;}
+body.rec-mode .frame::after{display:none;}
+</style>
+</head>
+<body>
+  <div class="app">
+  <header class="header">
+    <div class="title">
+      <h1>单词卡片</h1>
+    </div>
+    <div class="header-actions">
+      <button class="btn ghost" id="recBtn"><span class="rec-dot" id="recDot"></span><span class="hds-icon" style="--hds-icon-src:url(&quot;data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNNCA3QzQgNS45MDA3MyA0Ljg5MzkgNS4wMDU3NCA1Ljk5NTI5IDUuMDA1NzRMMTYuMDA0NyA1LjAwNTc0QzE3LjEwNzYgNS4wMDU3NCAxOCA1LjkwMjU4IDE4IDcuMDA1NzRWMTYuOTk0M0MxOCAxOC4wOTkzIDE3LjEwNiAxOSAxNi4wMDQ3IDE5SDUuOTk1MjlDNC44OTI0NSAxOSA0IDE4LjA5NzMgNCAxNi45OTQzVjdaTTE2IDhIMjBDMjAuNTUyMyA4IDIxIDguNDQ3NzIgMjEgOVYxNUMyMSAxNS41NTIzIDIwLjU1MjMgMTYgMjAgMTZIMTZWOFoiLz48L3N2Zz4=&quot;)" aria-hidden="true"></span>录制</button>
+      <button class="btn icon-only" id="openConfig" aria-label="配置"><span class="hds-icon" data-hds-icon="user.settings" style="--hds-icon-src:url(&quot;data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE2LjQxNTkgM0MxNi42ODI4IDMgMTYuOTI5NyAzLjE0MTM4IDE3LjA2NDQgMy4zNzEzOUwyMS44OTczIDExLjYyMTRDMjIuMDM0MiAxMS44NTUzIDIyLjAzNDIgMTIuMTQ0NyAyMS44OTczIDEyLjM3ODZMMTcuMDY0NCAyMC42Mjg2QzE2LjkyOTcgMjAuODU4NiAxNi42ODI4IDIxIDE2LjQxNTkgMjFINy41ODQwOEM3LjMxNzE2IDIxIDcuMDcwMjkgMjAuODU4NiA2LjkzNTU1IDIwLjYyODZMMi4xMDI3NSAxMi4zNzg2QzEuOTY1NzUgMTIuMTQ0NyAxLjk2NTc1IDExLjg1NTMgMi4xMDI3NSAxMS42MjE0TDYuOTM1NTUgMy4zNzEzOUM3LjA3MDI5IDMuMTQxMzggNy4zMTcxNiAzIDcuNTg0MDggM0gxNi40MTU5Wk0xNS45ODQ5IDQuNUg4LjAxNTA0TDMuNjIxNiAxMkw4LjAxNTA0IDE5LjVIMTUuOTg0OUwyMC4zNzg0IDEyTDE1Ljk4NDkgNC41Wk0xMi4xMDE5IDguMjVDMTMuNDU3OCA4LjI1IDE0LjY0NiA4Ljk4NDM0IDE1LjM1MDggMTAuMTE2OEwxNS4wNjU5IDEwLjI4MjJDMTQuNTMwNSAxMC41OTMxIDEzLjg1ODkgMTAuNTQ0MSAxMy4zNzQ0IDEwLjE1ODlDMTMuMDIwMSA5Ljg3NzI0IDEyLjU0OTkgOS43NSAxMi4xMDE5IDkuNzVDMTAuODU3MSA5Ljc1IDkuODQ4MDcgMTAuNzU3NCA5Ljg0ODA3IDEyQzkuODQ4MDcgMTMuMjQyNiAxMC44NTcxIDE0LjI1IDEyLjEwMTkgMTQuMjVDMTIuOTIzNCAxNC4yNSAxMy44MjU4IDEzLjc1MyAxNC4xMzEyIDEyLjk2MUMxNC40MjM1IDEyLjIwMzMgMTUuMTI1MyAxMiAxNS44NTgzIDEyQzE1Ljg1ODMgMTQuMDcxMSAxNC4xNzY1IDE1Ljc1IDEyLjEwMTkgMTUuNzVDMTAuMDI3MyAxNS43NSA4LjM0NTUxIDE0LjA3MTEgOC4zNDU1MSAxMkM4LjM0NTUxIDkuOTI4OTMgMTAuMDI3MyA4LjI1IDEyLjEwMTkgOC4yNVoiIGZpbGw9IiMwMDA4ODgiLz4KPC9zdmc+Cg==&quot;)" aria-hidden="true"></span></button>
+    </div>
+  </header>
+
+  <div class="frame">
+    <main class="grid" id="grid"></main>
+  </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2>配置卡片</h2>
+          <p>为每张卡片上传正面图片，并填写单词、音标与中文解释。</p>
+        </div>
+        <button class="x" id="closeModal" aria-label="关闭"><span class="hds-icon" style="--hds-icon-src:url(&quot;data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTEuOTk5OSAxMC45NTE3TDE5Ljk0MjkgM0MyMC41MjY3IDMuNTg0NDYgMjAuNTI2NyA0LjUzMjA2IDE5Ljk0MjkgNS4xMTY1MkwxMy4wNTcgMTIuMDFMMjEgMTkuOTYxN0MyMC40MTYyIDIwLjU0NjEgMTkuNDY5NiAyMC41NDYxIDE4Ljg4NTggMTkuOTYxN0wxMS45OTk5IDEzLjA2ODJMNS4xMTQxOSAxOS45NjE1QzQuNTMwMzggMjAuNTQ2IDMuNTgzODIgMjAuNTQ2IDMgMTkuOTYxNUwxMC45NDI4IDEyLjAxTDQuMDU3MSA1LjExNjY0QzMuNDczMjggNC41MzIxNyAzLjQ3MzI4IDMuNTg0NTggNC4wNTcxIDMuMDAwMTFMMTEuOTk5OSAxMC45NTE3WiIvPjwvc3ZnPg==&quot;)" aria-hidden="true"></span></button>
+      </div>
+      <div class="slots" id="slots"></div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="resetConfig">恢复默认</button>
+        <button class="btn ghost" id="cancelConfig">取消</button>
+        <button class="btn" id="saveConfig">保存</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const STORAGE_KEY = 'flipCards_v1';
+const N = 4;
+const defaultData = [
+  { word: 'Serendipity', phonetic: '/ˌserənˈdɪpəti/', meaning: '机缘巧合，意外发现美好事物的运气。', image: '' },
+  { word: 'Ephemeral', phonetic: '/ɪˈfemərəl/', meaning: '短暂的，转瞬即逝的。', image: '' },
+  { word: 'Resilience', phonetic: '/rɪˈzɪliəns/', meaning: '韧性，遭遇挫折后快速恢复的能力。', image: '' },
+  { word: 'Tranquility', phonetic: '/træŋˈkwɪləti/', meaning: '宁静，平和安宁的状态。', image: '' }
+];
+
+function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function load(){
+  try{
+    const r = localStorage.getItem(STORAGE_KEY);
+    if(r){
+      const p = JSON.parse(r);
+      if(Array.isArray(p) && p.length === N){
+        // 迁移旧字段：example（例句）→ meaning（中文解释）
+        return p.map(d => ({
+          word: d.word,
+          phonetic: d.phonetic,
+          meaning: (d.meaning != null) ? d.meaning : (d.example || ''),
+          image: d.image
+        }));
+      }
+    }
+  }catch(e){}
+  return defaultData.map(d => ({ ...d }));
+}
+function save(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }catch(e){
+    console.warn('localStorage 存储失败（可能图片过大），已降级使用内存存储：', e);
+  }
+}
+
+let data = load();
+function renderGrid(){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  data.forEach((d, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+
+    const tilt = document.createElement('div');
+    tilt.className = 'tilt';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.index = i;
+
+    const front = document.createElement('div');
+    front.className = 'face front';
+    if(d.image){
+      const img = document.createElement('img');
+      img.src = d.image;
+      img.alt = '卡片正面 ' + (i + 1);
+      front.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'placeholder';
+      ph.innerHTML = '<div class="letter">' + (i + 1) + '</div><div class="hint">点击配置卡片上传图片</div>';
+      front.appendChild(ph);
+    }
+
+    const back = document.createElement('div');
+    back.className = 'face back';
+    const bin = document.createElement('div');
+    bin.className = 'back-inner';
+    bin.innerHTML =
+      '<div class="back-word">' + escapeHtml(d.word) + '</div>' +
+      '<div class="back-phonetic">' + escapeHtml(d.phonetic) + '</div>' +
+      '<div class="back-example">' + escapeHtml(d.meaning) + '</div>';
+    back.appendChild(bin);
+
+    const glare = document.createElement('div');
+    glare.className = 'glare';
+
+    const countdown = document.createElement('div');
+    countdown.className = 'countdown';
+    countdown.innerHTML = '<span class="countdown-num">3</span>';
+
+    card.appendChild(front);
+    card.appendChild(back);
+    card.appendChild(countdown);
+    card.appendChild(glare);
+    tilt.appendChild(card);
+    cell.appendChild(tilt);
+    grid.appendChild(cell);
+
+    let counting = false;
+    card.addEventListener('click', () => {
+      if(counting) return;
+      if(card.classList.contains('flipped')){
+        // 已翻开，点击直接翻回
+        card.classList.remove('flipped');
+        return;
+      }
+      // 倒数 3→2→1，结束后翻开
+      counting = true;
+      runCountdown(card, countdown, () => {
+        card.classList.add('flipped');
+        counting = false;
+      });
+    });
+
+    // 鼠标倾斜（参考 reactbits 的 tilt 效果）
+    cell.addEventListener('mousemove', (e) => {
+      const r = cell.getBoundingClientRect();
+      const px = (e.clientX - r.left) / r.width - 0.5;
+      const py = (e.clientY - r.top) / r.height - 0.5;
+      const max = 12;
+      tilt.style.transform = 'rotateX(' + (-py * max) + 'deg) rotateY(' + (px * max) + 'deg)';
+    });
+    cell.addEventListener('mouseleave', () => {
+      tilt.style.transform = 'rotateX(0deg) rotateY(0deg)';
+    });
+  });
+}
+let draft = []; // 弹窗打开时的工作副本 [{word,meaning,image}]
+
+function renderSlots(){
+  const slots = document.getElementById('slots');
+  slots.innerHTML = '';
+  draft.forEach((d, i) => {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+
+    const head = document.createElement('div');
+    head.className = 'slot-head';
+    head.innerHTML = '<span>卡片 ' + (i + 1) + '</span><button class="remove" data-i="' + i + '">清除</button>';
+    slot.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'slot-body';
+
+    const upload = document.createElement('label');
+    upload.className = 'upload' + (d.image ? ' has-img' : '');
+    upload.title = '上传正面图片';
+    const upHint = document.createElement('div');
+    upHint.className = 'upload-hint';
+    upHint.innerHTML = '<span class="hds-icon" style="--hds-icon-src:url(&quot;data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIuNzM5MyA0LjQzMjYyVjE2LjQ5OTlDMTIuNzM5MyAxNy4zMjgzIDEyLjA2NjMgMTcuOTk5OSAxMS4yMzYyIDE3Ljk5OTlWNC4zNTk2Mkw3LjYxNDk0IDcuMzExOTZDNi45NzIwNyA3LjgzNjA4IDYuMDI1MTcgNy43NDA4NiA1LjUgNy4wOTkzTDExLjUxMiAyLjE2Nzk3QzExLjc4ODEgMS45NDE1IDEyLjE4NTYgMS45NDExIDEyLjQ2MjIgMi4xNjcwMkwxOC41IDcuMDk5M0MxNy45NTMyIDcuNzIyNjkgMTcuMDAzNiA3Ljc4NTc3IDE2LjM3ODkgNy4yNDAyTDEyLjczOTMgNC40MzI2MloiLz48cGF0aCBkPSJNMy41IDIwLjQ5OTFWMTkuMzU2N0MzLjUgMTguNTI4MiAyLjgyODQzIDE3Ljg1NjcgMiAxNy44NTY3VjIxLjUwMDFDMiAyMS43NzYyIDIuMjIzODYgMjIuMDAwMSAyLjUgMjIuMDAwMUgyMS41QzIxLjc3NjEgMjIuMDAwMSAyMiAyMS43NzYyIDIyIDIxLjUwMDFWMTcuODU2N0MyMS4xNzE2IDE3Ljg1NjcgMjAuNSAxOC41MjgyIDIwLjUgMTkuMzU2N1YyMC40OTkxSDMuNVoiLz48L3N2Zz4=&quot;)" aria-hidden="true"></span><span>上传图片</span>';
+    upload.appendChild(upHint);
+    if(d.image){
+      const pv = document.createElement('img');
+      pv.className = 'preview';
+      pv.src = d.image;
+      upload.appendChild(pv);
+    }
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+    fileInput.dataset.i = i;
+    fileInput.addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if(!f) return;
+      const reader = new FileReader();
+      reader.onload = () => { draft[i].image = reader.result; renderSlots(); };
+      reader.readAsDataURL(f);
+    });
+    upload.appendChild(fileInput);
+    upload.addEventListener('click', () => fileInput.click());
+
+    const fields = document.createElement('div');
+    fields.className = 'fields';
+    fields.innerHTML =
+      '<label>英文单词<input type="text" data-i="' + i + '" data-k="word" value="' + escapeHtml(d.word) + '" placeholder="例如：Serendipity"></label>' +
+      '<label>音标<input type="text" data-i="' + i + '" data-k="phonetic" value="' + escapeHtml(d.phonetic) + '" placeholder="例如：/ˌserənˈdɪpəti/"></label>' +
+      '<label>中文解释<textarea data-i="' + i + '" data-k="meaning" placeholder="例如：机缘巧合，意外发现美好事物的运气。">' + escapeHtml(d.meaning) + '</textarea></label>';
+    slot.appendChild(body);
+    body.appendChild(upload);
+    body.appendChild(fields);
+    slots.appendChild(slot);
+
+    head.querySelector('.remove').addEventListener('click', () => {
+      draft[i].image = '';
+      draft[i].word = '';
+      draft[i].phonetic = '';
+      draft[i].meaning = '';
+      renderSlots();
+    });
+  });
+
+  slots.querySelectorAll('input[data-k], textarea[data-k]').forEach(el => {
+    el.addEventListener('input', (e) => {
+      const i = +e.target.dataset.i;
+      const k = e.target.dataset.k;
+      draft[i][k] = e.target.value;
+    });
+  });
+}
+
+const overlay = document.getElementById('overlay');
+const openBtn = document.getElementById('openConfig');
+
+function openModal(){
+  draft = data.map(d => ({ ...d }));
+  renderSlots();
+  overlay.classList.add('open');
+}
+function closeModal(){ overlay.classList.remove('open'); }
+
+openBtn.addEventListener('click', openModal);
+document.getElementById('closeModal').addEventListener('click', closeModal);
+document.getElementById('cancelConfig').addEventListener('click', closeModal);
+overlay.addEventListener('click', (e) => { if(e.target === overlay) closeModal(); });
+document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeModal(); });
+
+document.getElementById('saveConfig').addEventListener('click', () => {
+  data = draft.map(d => ({ ...d }));
+  save();
+  renderGrid();
+  closeModal();
+});
+
+document.getElementById('resetConfig').addEventListener('click', () => {
+  data = defaultData.map(d => ({ ...d }));
+  save();
+  renderGrid();
+  closeModal();
+});
+
+// ===== 一键播放 + 录屏 =====
+const recBtn = document.getElementById('recBtn');
+
+let isRecording = false;
+let mediaRecorder = null;
+let recordedChunks = [];
+
+function setRecStatus(recording){
+  recBtn.classList.toggle('recording', recording);
+}
+
+// 聚焦第 i 张卡片（清除其它卡片聚焦态）
+function focusCard(i){
+  document.querySelectorAll('.card.focused').forEach(c => c.classList.remove('focused'));
+  const card = document.querySelector('.card[data-index="' + i + '"]');
+  if(card) card.classList.add('focused');
+}
+
+// 编程式翻开第 i 张卡片（带倒数，不管理聚焦）
+function flipCardTo(i){
+  const card = document.querySelector('.card[data-index="' + i + '"]');
+  if(!card || card.classList.contains('flipped')) return;
+  const countdown = card.querySelector('.countdown');
+  runCountdown(card, countdown, () => card.classList.add('flipped'));
+}
+
+// 倒数 3→2→1 后执行 onComplete
+function runCountdown(card, countdown, onComplete){
+  const numEl = countdown.querySelector('.countdown-num');
+  let n = 3;
+  numEl.textContent = n;
+  numEl.style.animation = 'none';
+  void numEl.offsetWidth;
+  numEl.style.animation = '';
+  countdown.classList.add('show');
+  const timer = setInterval(() => {
+    n--;
+    if(n > 0){
+      numEl.textContent = n;
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth; // 重触发动画
+      numEl.style.animation = '';
+    } else {
+      clearInterval(timer);
+      countdown.classList.remove('show');
+      onComplete();
+    }
+  }, 600);
+}
+
+// 依序播放：聚焦停顿 3s 后再倒数翻牌；上一张翻完后立即聚焦下一张
+function playSequence(){
+  const countdownMs = 1800; // 倒数 3→2→1
+  const pauseMs = 3000;     // 聚焦后的提示停顿 3s
+  let t = 0;
+  for(let i = 0; i < N; i++){
+    // 聚焦当前卡片（立即）
+    setTimeout(() => focusCard(i), t);
+    // 聚焦后停顿 3s，再开始倒数翻牌
+    setTimeout(() => flipCardTo(i), t + pauseMs);
+    t += countdownMs + pauseMs;
+  }
+}
+
+// 返回播放总时长（末张翻完后留展示余量）
+function sequenceTotalMs(){
+  const countdownMs = 1800;
+  const pauseMs = 3000;
+  return N * (countdownMs + pauseMs) + 1200;
+}
+
+function pickMimeType(){
+  const candidates = ['video/mp4', 'video/mp4;codecs=avc1', 'video/webm;codecs=vp9', 'video/webm'];
+  for(const m of candidates){
+    if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+async function startRecording(){
+  if(isRecording) return;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    alert('当前浏览器不支持屏幕录制，请使用 Chrome / Edge / Safari 最新版本。');
+    return;
+  }
+
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30 },
+      audio: false
+    });
+  }catch(err){
+    // 用户取消选择
+    return;
+  }
+
+  const mime = pickMimeType();
+  if(!mime){
+    stream.getTracks().forEach(t => t.stop());
+    alert('当前浏览器不支持视频录制编码。');
+    return;
+  }
+
+  // 进入录屏模式：隐藏标题栏与出血线
+  document.body.classList.add('rec-mode');
+  // 重置卡片为正面，并清除聚焦态
+  document.querySelectorAll('.card.flipped').forEach(c => c.classList.remove('flipped'));
+  document.querySelectorAll('.card.focused').forEach(c => c.classList.remove('focused'));
+
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  mediaRecorder.ondataavailable = (e) => { if(e.data && e.data.size > 0) recordedChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    const blob = new Blob(recordedChunks, { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'word-cards.' + ext;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+
+    stream.getTracks().forEach(t => t.stop());
+    document.body.classList.remove('rec-mode');
+    document.querySelectorAll('.card.focused').forEach(c => c.classList.remove('focused'));
+    isRecording = false;
+    recBtn.disabled = false;
+    setRecStatus(false);
+  };
+
+  isRecording = true;
+  recBtn.disabled = true;
+  setRecStatus(true);
+
+  // 等待用户确认选择画面后开始
+  mediaRecorder.start(1000);
+
+  // 稍作停顿后依序播放
+  setTimeout(playSequence, 800);
+
+  // 播放完成后自动停止（初始停顿 + 逐张倒数翻开 + 停顿）
+  const totalMs = 800 + sequenceTotalMs();
+  setTimeout(() => {
+    if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+      mediaRecorder.stop();
+    }
+  }, totalMs);
+
+  // 若用户手动停止共享，兜底停止录制
+  stream.getVideoTracks()[0].addEventListener('ended', () => {
+    if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+      mediaRecorder.stop();
+    }
+  });
+}
+
+recBtn.addEventListener('click', startRecording);
+
+renderGrid();
+</script>
+</body>
+</html>
